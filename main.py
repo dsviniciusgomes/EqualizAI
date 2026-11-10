@@ -1,7 +1,11 @@
 import os
+import json
+from datetime import date
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from google import genai
+from google.genai import types
 from typing import Optional
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -69,48 +73,79 @@ def create_lancamento(lancamento: LancamentoCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-from pydantic import BaseModel
-from datetime import date
+@app.get("/")
+def home():
+    return {"status": "EcomizAI API rodando com sucesso!"}
 
-# 1. Modelo de entrada para o texto livre que vem do usuário
+
+# Rota padrão para cadastro manual de lançamentos
+@app.post("/lancamentos")
+def criar_lancamento(lancamento: LancamentoCreate):
+    try:
+        dados_dict = lancamento.model_dump()
+        response = supabase.table("lancamento").insert(dados_dict).execute()
+        return {
+            "mensagem": "Lançamento cadastrado com sucesso!",
+            "dados": response.data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+#Endpoint IA
+
+ai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
 class TransacaoTexto(BaseModel):
     texto: str
-    user_id: str  # Por enquanto, exigimos o UUID do usuário que criamos
+    user_id: str
 
-# 2. Endpoint de Inteligência Artificial para transações
+# Rota inteligente com IA de verdade (Gemini)
 @app.post("/ia/processar-transacao")
 def processar_transacao_com_ia(dados: TransacaoTexto):
-    """
-    Recebe um texto livre, simula/processa a extração por IA 
-    e salva o lançamento estruturado no Supabase.
-    """
-    
-    # [LÓGICA DE IA ENTRARÁ AQUI EM BREVE]
-    # Por enquanto, vamos simular a extração inteligente dos dados do texto:
-    # Exemplo simulado de extração:
-    descricao_extraida = f"Processado via IA: {dados.texto}"
-    valor_extraido = 50.00  # A IA vai ler do texto futuramente
-    data_hoje = str(date.today())
-    
-    # Monta o dicionário para salvar no Supabase
-    novo_lancamento = {
-        "description": descricao_extraida,
-        "amount": valor_extraido,
-        "date": data_hoje,
-        "user_id": dados.user_id,
-        "categoria_id": None,
-        "favorecido_id": None,
-        "banco_id": None,
-        "forma_pagamento_id": None
-    }
-    
     try:
-        # Insere no Supabase na tabela 'lancamento'
-        response = supabase.table("lancamento").insert(novo_lancamento).execute()
-        return {
-            "mensagem": "Transação processada e salva com sucesso!",
-            "dados_extraidos_por_ia": novo_lancamento,
-            "resposta_supabase": response.data
+        # 1. Prompt estruturado para a IA extrair os dados da frase
+        prompt = f"""
+        Analise a seguinte frase de despesa/gasto financeiro e extraia as informações solicitadas:
+        Frase: "{dados.texto}"
+        
+        Retorne estritamente um JSON contendo:
+        - description: Uma descrição limpa e curta do gasto (ex: "Açaí", "Supermercado", "Uber", "Farmácia").
+        - amount: O valor numérico da transação (ex: 25.50), apenas o número float.
+        - date: A data no formato YYYY-MM-DD se mencionada na frase, caso contrário use exatamente a data de hoje: {date.today()}.
+        """
+
+        # 2. Chamada real ao modelo Gemini com Structured Output (JSON)
+        response = ai_client.models.generate_content(
+            model='gemini-3.8-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+            ),
+        )
+        
+        # Converte a resposta de texto da IA em um dicionário Python
+        dados_ia = json.loads(response.text)
+
+        # 3. Mapeia os dados extraídos pela IA para a estrutura do banco Supabase
+        novo_lancamento = {
+            "description": dados_ia.get("description", dados.texto),
+            "amount": float(dados_ia.get("amount", 0.0)),
+            "date": dados_ia.get("date", str(date.today())),
+            "user_id": dados.user_id,
+            "categoria_id": None,
+            "favorecido_id": None,
+            "banco_id": None,
+            "forma_pagamento_id": None
         }
+
+        # 4. Salva o registro processado direto no Supabase
+        db_response = supabase.table("lancamento").insert(novo_lancamento).execute()
+
+        return {
+            "mensagem": "Texto interpretado pela IA e salvo com sucesso!",
+            "extracao_ia": dados_ia,
+            "resposta_supabase": db_response.data
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
