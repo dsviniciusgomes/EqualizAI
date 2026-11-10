@@ -68,3 +68,49 @@ def create_lancamento(lancamento: LancamentoCreate):
         return {"message": "Lançamento cadastrado com sucesso!", "data": response.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+from pydantic import BaseModel
+from datetime import date
+
+# 1. Modelo de entrada para o texto livre que vem do usuário
+class TransacaoTexto(BaseModel):
+    texto: str
+    user_id: str  # Por enquanto, exigimos o UUID do usuário que criamos
+
+# 2. Endpoint de Inteligência Artificial para transações
+@app.post("/ia/processar-transacao")
+def processar_transacao_com_ia(dados: TransacaoTexto):
+    """
+    Recebe um texto livre, simula/processa a extração por IA 
+    e salva o lançamento estruturado no Supabase.
+    """
+    
+    # [LÓGICA DE IA ENTRARÁ AQUI EM BREVE]
+    # Por enquanto, vamos simular a extração inteligente dos dados do texto:
+    # Exemplo simulado de extração:
+    descricao_extraida = f"Processado via IA: {dados.texto}"
+    valor_extraido = 50.00  # A IA vai ler do texto futuramente
+    data_hoje = str(date.today())
+    
+    # Monta o dicionário para salvar no Supabase
+    novo_lancamento = {
+        "description": descricao_extraida,
+        "amount": valor_extraido,
+        "date": data_hoje,
+        "user_id": dados.user_id,
+        "categoria_id": None,
+        "favorecido_id": None,
+        "banco_id": None,
+        "forma_pagamento_id": None
+    }
+    
+    try:
+        # Insere no Supabase na tabela 'lancamento'
+        response = supabase.table("lancamento").insert(novo_lancamento).execute()
+        return {
+            "mensagem": "Transação processada e salva com sucesso!",
+            "dados_extraidos_por_ia": novo_lancamento,
+            "resposta_supabase": response.data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
