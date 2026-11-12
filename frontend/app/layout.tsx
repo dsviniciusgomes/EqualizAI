@@ -7,7 +7,7 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const jetbrains = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains' })
 
 export const metadata: Metadata = {
-  title: 'EqualizAI — Suas finanças em equilíbrio',
+  title: 'EqualizAI — Suas lançamentos em equilíbrio',
   description:
     'O EqualizAI centraliza receitas, despesas, contas, cartões e planejamento financeiro em um só lugar, com uma visão clara e organizada da sua vida financeira.',
   applicationName: 'EqualizAI',
