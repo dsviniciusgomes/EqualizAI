@@ -37,7 +37,7 @@ export function AuthScreen() {
         <div className="max-w-md">
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">Organize. Equilibre. Evolua.</p>
           <h1 className="mt-4 text-4xl font-semibold leading-[1.1] tracking-tight text-balance">
-            Suas finanças em equilíbrio.
+            Seus lançamentos em equilíbrio.
           </h1>
           <p className="mt-4 text-[15px] leading-relaxed text-muted-foreground text-pretty">
             Reúna receitas, despesas, contas, cartões e planejamento financeiro em um só lugar, com uma visão clara e
