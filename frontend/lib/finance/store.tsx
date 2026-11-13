@@ -21,7 +21,6 @@ interface FinanceState {
   authReady: boolean
   authError: string
   setView: (view: ViewId) => void
-  signIn: (session: Session) => void
   signOut: () => Promise<void>
   updateUser: (data: Partial<UserProfile>) => void
   addTransaction: (tx: Omit<Transaction, 'id'>) => Promise<Transaction>
@@ -46,7 +45,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<ViewId>('dashboard')
   const [transactions, setTransactions] = useState(seed.transactions)
 
-  const signIn = useCallback((session: Session, resetView = true) => {
+  const acceptSession = useCallback((session: Session, resetView: boolean) => {
     const email = session.user.email ?? ''
     const name = session.user.user_metadata.full_name ?? session.user.user_metadata.name
     setUserId(session.user.id)
@@ -73,39 +72,72 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true
+    let sessionCheck = 0
+    let approvedUserId: string | null = null
     let unsubscribe = () => {}
 
     try {
       const supabase = getSupabaseClient()
-      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
         if (!active) return
-        if (session) {
-          signIn(session, false)
-        } else {
+        if (event === 'TOKEN_REFRESHED' && session && approvedUserId === session.user.id) {
+          setAccessToken(session.access_token)
+          return
+        }
+
+        const checkId = ++sessionCheck
+        approvedUserId = null
+        if (!session) {
           setUser(null)
           setUserId(null)
           setAccessToken(null)
+          setAuthReady(true)
+          return
         }
-        setAuthReady(true)
+
+        setAuthReady(false)
+        setUser(null)
+        setUserId(null)
+        setAccessToken(null)
+
+        window.setTimeout(() => {
+          void (async () => {
+            let denialMessage = 'Sua conta aguarda aprovação do administrador.'
+            try {
+              const { data: profile, error } = await supabase
+                .from('usuario_perfil')
+                .select('status')
+                .eq('id', session.user.id)
+                .maybeSingle()
+
+              if (error) {
+                denialMessage = 'Não foi possível verificar a aprovação da sua conta.'
+              } else if (profile?.status === 'aprovado') {
+                if (!active || checkId !== sessionCheck) return
+                approvedUserId = session.user.id
+                acceptSession(session, event === 'SIGNED_IN')
+                setAuthReady(true)
+                return
+              }
+            } catch {
+              denialMessage = 'Não foi possível verificar a aprovação da sua conta.'
+            }
+
+            if (!active || checkId !== sessionCheck) return
+            setAuthError(denialMessage)
+            try {
+              const { error } = await supabase.auth.signOut()
+              if (error) throw error
+            } catch (error) {
+              const detail = error instanceof Error ? error.message : 'Erro desconhecido.'
+              setAuthError(`${denialMessage} Não foi possível encerrar a sessão: ${detail}`)
+            } finally {
+              if (active && checkId === sessionCheck) setAuthReady(true)
+            }
+          })()
+        }, 0)
       })
       unsubscribe = () => data.subscription.unsubscribe()
-
-      void supabase.auth.getSession().then(({ data: sessionData, error }) => {
-        if (!active) return
-        if (error) throw error
-        if (sessionData.session) {
-          signIn(sessionData.session, false)
-        } else {
-          setUser(null)
-          setUserId(null)
-          setAccessToken(null)
-        }
-        setAuthReady(true)
-      }).catch((error: unknown) => {
-        if (!active) return
-        setAuthError(error instanceof Error ? error.message : 'Não foi possível carregar sua sessão.')
-        setAuthReady(true)
-      })
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Não foi possível inicializar a autenticação.')
       setAuthReady(true)
@@ -113,9 +145,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
     return () => {
       active = false
+      sessionCheck += 1
       unsubscribe()
     }
-  }, [signIn])
+  }, [acceptSession])
   const updateUser = useCallback(
     (data: Partial<UserProfile>) => setUser((prev) => (prev ? { ...prev, ...data } : prev)),
     [],
@@ -146,7 +179,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       authReady,
       authError,
       setView,
-      signIn,
       signOut,
       updateUser,
       addTransaction,
@@ -160,7 +192,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       seed,
       authReady,
       authError,
-      signIn,
       signOut,
       updateUser,
       addTransaction,

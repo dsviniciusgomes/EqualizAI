@@ -27,6 +27,8 @@ Configure estas variáveis no ambiente de execução do Next.js:
 
 O frontend usa essas variáveis para autenticar com o Supabase. Os lançamentos são enviados para `https://equalizai.onrender.com/lancamentos` com o token da sessão no cabeçalho `Authorization: Bearer`.
 
+Após login ou restauração da sessão, o frontend verifica `usuario_perfil.status`; somente contas com status `aprovado` acessam o painel.
+
 ---
 
 ## 🗄️ Modelagem do Sistema

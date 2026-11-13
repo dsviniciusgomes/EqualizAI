@@ -2,7 +2,6 @@
 
 import { useState, type FormEvent } from 'react'
 import { ArrowRight, Eye, EyeOff, Sparkles, TrendingUp, CreditCard } from 'lucide-react'
-import { useFinance } from '@/lib/finance/store'
 import { getSupabaseClient } from '@/lib/supabase'
 import { Field, Segmented, TextInput } from './primitives'
 import { Logo } from './logo'
@@ -11,7 +10,6 @@ import { Button } from '@/components/ui/button'
 type Mode = 'entrar' | 'cadastro'
 
 export function AuthScreen({ initialError = '' }: { initialError?: string }) {
-  const { signIn } = useFinance()
   const [mode, setMode] = useState<Mode>('entrar')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState(initialError)
@@ -42,8 +40,6 @@ export function AuthScreen({ initialError = '' }: { initialError?: string }) {
         setNotice('Cadastro realizado. Confira seu e-mail para confirmar a conta antes de entrar.')
         return
       }
-
-      signIn(result.data.session)
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : 'Não foi possível autenticar.')
     } finally {
