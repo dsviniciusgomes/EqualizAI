@@ -24,6 +24,7 @@ export function ManualEntryForm() {
   const [payment, setPayment] = useState<PaymentMethod>('Pix')
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const categories = type === 'receita' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
 
@@ -32,26 +33,33 @@ export function ManualEntryForm() {
     setCategory(next === 'receita' ? INCOME_CATEGORIES[0] : EXPENSE_CATEGORIES[0])
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     const value = Number(amount.replace(/\./g, '').replace(',', '.'))
     if (!description.trim()) return setError('Informe uma descrição.')
     if (!Number.isFinite(value) || value <= 0) return setError('Informe um valor maior que zero.')
     if (!date) return setError('Informe a data.')
     setError('')
-    addTransaction({
-      description: description.trim(),
-      amount: Math.round(value * 100) / 100,
-      date,
-      category,
-      type,
-      payment,
-      source: 'manual',
-    })
-    setDescription('')
-    setAmount('')
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2200)
+    setSaving(true)
+    try {
+      await addTransaction({
+        description: description.trim(),
+        amount: Math.round(value * 100) / 100,
+        date,
+        category,
+        type,
+        payment,
+        source: 'manual',
+      })
+      setDescription('')
+      setAmount('')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2200)
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Não foi possível salvar o lançamento.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -132,8 +140,8 @@ export function ManualEntryForm() {
               </span>
             ) : null}
           </p>
-          <Button type="submit" className="h-11 rounded-xl px-5">
-            Salvar lançamento
+          <Button type="submit" disabled={saving} className="h-11 rounded-xl px-5">
+            {saving ? 'Salvando…' : 'Salvar lançamento'}
           </Button>
         </div>
       </form>

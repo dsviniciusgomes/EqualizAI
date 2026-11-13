@@ -3,20 +3,22 @@
 import { useState, type FormEvent } from 'react'
 import { ArrowRight, Eye, EyeOff, Sparkles, TrendingUp, CreditCard } from 'lucide-react'
 import { useFinance } from '@/lib/finance/store'
+import { getSupabaseClient } from '@/lib/supabase'
 import { Field, Segmented, TextInput } from './primitives'
 import { Logo } from './logo'
 import { Button } from '@/components/ui/button'
 
 type Mode = 'entrar' | 'cadastro'
 
-export function AuthScreen() {
+export function AuthScreen({ initialError = '' }: { initialError?: string }) {
   const { signIn } = useFinance()
   const [mode, setMode] = useState<Mode>('entrar')
   const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(initialError)
+  const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(false)
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const form = new FormData(e.currentTarget)
     const email = String(form.get('email') ?? '').trim()
@@ -26,8 +28,27 @@ export function AuthScreen() {
     if (password.length < 6) return setError('A senha precisa ter pelo menos 6 caracteres.')
     if (mode === 'cadastro' && name.trim().length < 2) return setError('Informe seu nome.')
     setError('')
+    setNotice('')
     setLoading(true)
-    setTimeout(() => signIn({ email, name: mode === 'cadastro' ? name : undefined }), 650)
+    try {
+      const auth = getSupabaseClient().auth
+      const result =
+        mode === 'entrar'
+          ? await auth.signInWithPassword({ email, password })
+          : await auth.signUp({ email, password, options: { data: { full_name: name.trim() } } })
+
+      if (result.error) throw result.error
+      if (!result.data.session) {
+        setNotice('Cadastro realizado. Confira seu e-mail para confirmar a conta antes de entrar.')
+        return
+      }
+
+      signIn(result.data.session)
+    } catch (authError) {
+      setError(authError instanceof Error ? authError.message : 'Não foi possível autenticar.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -91,6 +112,7 @@ export function AuthScreen() {
               onChange={(v) => {
                 setMode(v)
                 setError('')
+                setNotice('')
               }}
               options={[
                 { value: 'entrar', label: 'Entrar' },
@@ -140,6 +162,11 @@ export function AuthScreen() {
             <p role="alert" aria-live="polite" className="min-h-5 text-[13px] text-destructive">
               {error}
             </p>
+            {notice && (
+              <p role="status" aria-live="polite" className="-mt-4 text-[13px] text-primary">
+                {notice}
+              </p>
+            )}
 
             <Button type="submit" disabled={loading} className="-mt-3 h-11 rounded-xl text-sm font-medium">
               {loading ? 'Carregando…' : mode === 'entrar' ? 'Entrar' : 'Criar conta'}

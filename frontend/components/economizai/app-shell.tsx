@@ -29,7 +29,7 @@ function initials(name: string) {
 }
 
 export function AppShell() {
-  const { view, setView, user, signOut, today } = useFinance()
+  const { view, setView, user, signOut, today, authError } = useFinance()
   if (!user) return null
 
   return (
@@ -107,6 +107,11 @@ export function AppShell() {
       </header>
 
       <main className="mx-auto w-full max-w-[1240px] px-5 pb-28 pt-8 sm:px-8 lg:px-12 lg:pb-16 lg:pt-12">
+        {authError && (
+          <p role="alert" className="mb-5 text-sm text-destructive">
+            {authError}
+          </p>
+        )}
         <div key={view} className="animate-in fade-in slide-in-from-bottom-1 duration-300">
           {view === 'dashboard' && <DashboardView />}
           {view === 'lancamentos' && <TransactionsView />}
