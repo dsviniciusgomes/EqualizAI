@@ -2,6 +2,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 let client: SupabaseClient | null = null
 
+const noCacheFetch: typeof fetch = (input, init) => fetch(input, { ...init, cache: 'no-store' })
+
 export function getSupabaseClient() {
   if (client) return client
 
@@ -11,6 +13,6 @@ export function getSupabaseClient() {
     throw new Error('Configure NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY.')
   }
 
-  client = createClient(url, anonKey)
+  client = createClient(url, anonKey, { global: { fetch: noCacheFetch } })
   return client
 }

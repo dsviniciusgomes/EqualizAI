@@ -73,20 +73,14 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true
     let sessionCheck = 0
-    let approvedUserId: string | null = null
     let unsubscribe = () => {}
 
     try {
       const supabase = getSupabaseClient()
       const { data } = supabase.auth.onAuthStateChange((event, session) => {
         if (!active) return
-        if (event === 'TOKEN_REFRESHED' && session && approvedUserId === session.user.id) {
-          setAccessToken(session.access_token)
-          return
-        }
 
         const checkId = ++sessionCheck
-        approvedUserId = null
         if (!session) {
           setUser(null)
           setUserId(null)
@@ -108,13 +102,14 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 .from('usuario_perfil')
                 .select('status')
                 .eq('id', session.user.id)
-                .maybeSingle()
+                .single()
 
               if (error) {
-                denialMessage = 'Não foi possível verificar a aprovação da sua conta.'
-              } else if (profile?.status === 'aprovado') {
+                if (error.code !== 'PGRST116') {
+                  denialMessage = 'Não foi possível verificar a aprovação da sua conta.'
+                }
+              } else if (profile.status === 'aprovado') {
                 if (!active || checkId !== sessionCheck) return
-                approvedUserId = session.user.id
                 acceptSession(session, event === 'SIGNED_IN')
                 setAuthReady(true)
                 return
