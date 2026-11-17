@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, type FormEvent } from 'react'
-import { ArrowRight, Eye, EyeOff, Sparkles, TrendingUp, CreditCard } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, Sparkles } from 'lucide-react'
 import { getSupabaseClient } from '@/lib/supabase'
 import { Field, Segmented, TextInput } from './primitives'
 import { Logo } from './logo'
@@ -57,14 +57,11 @@ export function AuthScreen({ initialError = '' }: { initialError?: string }) {
             Seus lançamentos em equilíbrio.
           </h1>
           <p className="mt-4 text-[15px] leading-relaxed text-muted-foreground text-pretty">
-            Reúna receitas, despesas, contas, cartões e planejamento financeiro em um só lugar, com uma visão clara e
-            organizada da sua vida financeira.
+            Reúna receitas, despesas e contas em um só lugar, com uma visão clara e organizada da sua vida financeira.
           </p>
           <ul className="mt-10 flex flex-col gap-4">
             {[
               { icon: Sparkles, title: 'Lançamentos com IA', text: '“Gastei 45 no mercado com o cartão.”' },
-              { icon: TrendingUp, title: 'Previsão de saldo', text: 'Projeção para os próximos 6 meses.' },
-              { icon: CreditCard, title: 'Cartões e parcelas', text: 'Faturas e compras parceladas sob controle.' },
             ].map(({ icon: Icon, title, text }) => (
               <li key={title} className="flex items-start gap-4">
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">

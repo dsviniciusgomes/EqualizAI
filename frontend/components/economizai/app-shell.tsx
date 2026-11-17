@@ -1,21 +1,17 @@
 'use client'
 
-import { CalendarClock, CreditCard, LayoutGrid, LogOut, PlusCircle, UserRound } from 'lucide-react'
+import { LayoutGrid, LogOut, PlusCircle, UserRound } from 'lucide-react'
 import { useFinance, type ViewId } from '@/lib/finance/store'
 import { longMonth } from '@/lib/finance/format'
 import { cn } from '@/lib/utils'
 import { Logo } from './logo'
 import { DashboardView } from './views/dashboard-view'
 import { TransactionsView } from './views/transactions-view'
-import { ForecastView } from './views/forecast-view'
-import { CardsView } from './views/cards-view'
 import { ProfileView } from './views/profile-view'
 
 const NAV: { id: ViewId; label: string; icon: typeof LayoutGrid }[] = [
   { id: 'dashboard', label: 'Visão geral', icon: LayoutGrid },
   { id: 'lancamentos', label: 'Lançamentos', icon: PlusCircle },
-  { id: 'previsao', label: 'Previsão', icon: CalendarClock },
-  { id: 'cartoes', label: 'Cartões', icon: CreditCard },
   { id: 'perfil', label: 'Perfil', icon: UserRound },
 ]
 
@@ -115,8 +111,6 @@ export function AppShell() {
         <div key={view} className="animate-in fade-in slide-in-from-bottom-1 duration-300">
           {view === 'dashboard' && <DashboardView />}
           {view === 'lancamentos' && <TransactionsView />}
-          {view === 'previsao' && <ForecastView />}
-          {view === 'cartoes' && <CardsView />}
           {view === 'perfil' && <ProfileView />}
         </div>
       </main>

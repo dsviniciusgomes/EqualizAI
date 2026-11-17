@@ -8,7 +8,7 @@ import { uid } from './format'
 import { createLancamento } from './api'
 import type { CreditCard, FutureEntry, InstallmentPurchase, Transaction, UserProfile } from './types'
 
-export type ViewId = 'dashboard' | 'lancamentos' | 'previsao' | 'cartoes' | 'perfil'
+export type ViewId = 'dashboard' | 'lancamentos' | 'perfil'
 
 interface FinanceState {
   today: Date
