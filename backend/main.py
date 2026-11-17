@@ -1,9 +1,11 @@
 import os
 import json
+import logging
 from datetime import date
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
 from typing import Optional
@@ -27,6 +29,24 @@ app = FastAPI(
     title="AI Finance API",
     description="API de controle financeiro integrada ao Supabase (Tabela: lancamento)",
     version="1.0.0"
+)
+
+frontend_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv(
+        "FRONTEND_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=frontend_origins,
+    allow_origin_regex=r"https://([a-z0-9-]+\.)*vercel\.app",
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Modelo Pydantic baseado exatamente nas colunas da sua tabela 'lancamento'
@@ -96,8 +116,12 @@ def criar_lancamento(lancamento: LancamentoCreate):
 ai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 class TransacaoTexto(BaseModel):
-    texto: str
-    user_id: str
+    texto: str = Field(min_length=1)
+
+class ExtracaoTransacao(BaseModel):
+    description: str = Field(min_length=1)
+    amount: float = Field(gt=0)
+    date: date
 
 # Rota inteligente com IA de verdade (Gemini)
 @app.post("/ia/processar-transacao")
@@ -105,12 +129,13 @@ def processar_transacao_com_ia(dados: TransacaoTexto):
     try:
         # 1. Prompt estruturado para a IA extrair os dados da frase
         prompt = f"""
-        Analise a seguinte frase de despesa/gasto financeiro e extraia as informações solicitadas:
+        Analise a seguinte frase de movimentação financeira, que pode ser receita ou despesa,
+        e extraia as informações solicitadas:
         Frase: "{dados.texto}"
         
         Retorne estritamente um JSON contendo:
         - description: Uma descrição limpa e curta do gasto (ex: "Açaí", "Supermercado", "Uber", "Farmácia").
-        - amount: O valor numérico da transação (ex: 25.50), apenas o número float.
+        - amount: O valor numérico positivo da transação (ex: 25.50), apenas o número.
         - date: A data no formato YYYY-MM-DD se mencionada na frase, caso contrário use exatamente a data de hoje: {date.today()}.
         """
 
@@ -124,28 +149,15 @@ def processar_transacao_com_ia(dados: TransacaoTexto):
         )
         
         # Converte a resposta de texto da IA em um dicionário Python
-        dados_ia = json.loads(response.text)
-
-        # 3. Mapeia os dados extraídos pela IA para a estrutura do banco Supabase
-        novo_lancamento = {
-            "description": dados_ia.get("description", dados.texto),
-            "amount": float(dados_ia.get("amount", 0.0)),
-            "date": dados_ia.get("date", str(date.today())),
-            "user_id": dados.user_id,
-            "categoria_id": None,
-            "favorecido_id": None,
-            "banco_id": None,
-            "forma_pagamento_id": None
-        }
-
-        # 4. Salva o registro processado direto no Supabase
-        db_response = supabase.table("lancamento").insert(novo_lancamento).execute()
+        if not response.text:
+            raise ValueError("A IA retornou uma resposta vazia.")
+        dados_ia = ExtracaoTransacao.model_validate(json.loads(response.text))
 
         return {
-            "mensagem": "Texto interpretado pela IA e salvo com sucesso!",
-            "extracao_ia": dados_ia,
-            "resposta_supabase": db_response.data
+            "mensagem": "Texto interpretado pela IA com sucesso.",
+            "extracao_ia": dados_ia.model_dump(mode="json"),
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.exception("Falha ao processar transação com IA")
+        raise HTTPException(status_code=502, detail="Não foi possível interpretar a transação com a IA.") from e

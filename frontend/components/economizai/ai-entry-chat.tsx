@@ -5,6 +5,7 @@ import { ArrowUp, Check, Sparkles, X } from 'lucide-react'
 import { useFinance } from '@/lib/finance/store'
 import { parseNaturalLanguage, type ParsedEntry } from '@/lib/finance/ai-parser'
 import { formatBRL, formatFullDate } from '@/lib/finance/format'
+import { getApiUrl } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Badge, Panel, PanelHeader } from './primitives'
 
@@ -20,6 +21,31 @@ const SUGGESTIONS = [
   'Paguei 89,90 de internet ontem no boleto',
 ]
 
+interface AiExtraction {
+  description: string
+  amount: number
+  date: string
+}
+
+function isAiExtractionResponse(value: unknown): value is { extracao_ia: AiExtraction } {
+  if (typeof value !== 'object' || value === null || !('extracao_ia' in value)) return false
+  const extraction = value.extracao_ia
+  return (
+    typeof extraction === 'object' &&
+    extraction !== null &&
+    'description' in extraction &&
+    typeof extraction.description === 'string' &&
+    extraction.description.trim().length > 0 &&
+    'amount' in extraction &&
+    typeof extraction.amount === 'number' &&
+    Number.isFinite(extraction.amount) &&
+    extraction.amount > 0 &&
+    'date' in extraction &&
+    typeof extraction.date === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(extraction.date)
+  )
+}
+
 export function AiEntryChat() {
   const { addTransaction, today } = useFinance()
   const [input, setInput] = useState('')
@@ -31,7 +57,7 @@ export function AiEntryChat() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
 
-  function process(text: string) {
+  async function process(text: string) {
     const trimmed = text.trim()
     if (!trimmed || busy) return
     const userId = crypto.randomUUID()
@@ -39,24 +65,58 @@ export function AiEntryChat() {
     setMessages((m) => [...m, { id: userId, role: 'user', text: trimmed }, { id: aiId, role: 'ai', status: 'thinking' }])
     setInput('')
     setBusy(true)
-    setTimeout(() => {
-      const entry = parseNaturalLanguage(trimmed, today)
+
+    try {
+      const url = getApiUrl('/ia/processar-transacao')
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto: trimmed }),
+      })
+
+      if (!response.ok) {
+        const details = await response.text()
+        throw new Error(`HTTP ${response.status} ${response.statusText}: ${details || 'resposta sem detalhes'}`)
+      }
+
+      const payload: unknown = await response.json()
+      if (!isAiExtractionResponse(payload)) {
+        throw new Error('A API retornou uma resposta de extração inválida.')
+      }
+
+      const localEntry = parseNaturalLanguage(trimmed, today)
+      const entry: ParsedEntry = {
+        description: payload.extracao_ia.description.trim(),
+        amount: payload.extracao_ia.amount,
+        date: payload.extracao_ia.date,
+        category: localEntry?.category ?? 'Outros',
+        type: localEntry?.type ?? 'despesa',
+        payment: localEntry?.payment ?? 'Pix',
+        confidence: localEntry ? Math.max(localEntry.confidence, 0.8) : 0.75,
+      }
+
       setMessages((m) =>
         m.map((msg) =>
-          msg.id !== aiId
-            ? msg
-            : entry
-              ? { id: aiId, role: 'ai', status: 'parsed', entry, state: 'pending' }
-              : {
-                  id: aiId,
-                  role: 'ai',
-                  status: 'error',
-                  text: 'Não consegui identificar um valor. Tente algo como “Gastei 32 de Uber ontem”.',
-                },
+          msg.id === aiId ? { id: aiId, role: 'ai', status: 'parsed', entry, state: 'pending' } : msg,
         ),
       )
+    } catch (error) {
+      console.error('Falha ao chamar a API de processamento de transações:', error)
+      setMessages((m) =>
+        m.map((msg) =>
+          msg.id === aiId
+            ? {
+                id: aiId,
+                role: 'ai',
+                status: 'error',
+                text: 'Não foi possível processar sua movimentação. Verifique a conexão com a API e tente novamente.',
+              }
+            : msg,
+        ),
+      )
+    } finally {
       setBusy(false)
-    }, 1100)
+    }
   }
 
   function resolve(id: string, action: 'saved' | 'discarded') {

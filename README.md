@@ -16,6 +16,14 @@ Este projeto foi desenvolvido para gerenciar receitas, despesas e fluxo financei
 * **Segurança:** RLS (Row Level Security), Políticas de Acesso Granulares, Chaves Estrangeiras Compostas
 * **Controle de Versão:** Git & GitHub
 
+## Integração com a API de IA
+
+O front-end é uma aplicação Next.js. Configure `NEXT_PUBLIC_API_URL` como a URL base do FastAPI (por exemplo, `http://localhost:8000` no desenvolvimento e a URL publicada do backend na Vercel). A URL pode terminar em `/`; a aplicação normaliza essa barra antes de chamar `/ia/processar-transacao`.
+
+No backend, `FRONTEND_ORIGINS` aceita uma lista de origens separadas por vírgula. Por padrão, são permitidos `localhost` e `127.0.0.1` nas portas 3000 e 5173, além de origens HTTPS de projetos `vercel.app`. Inclua o domínio de produção personalizado em `FRONTEND_ORIGINS`.
+
+O endpoint recebe `{"texto":"Gastei 45 no mercado hoje"}` e retorna a extração da IA. Ele não grava o lançamento: a interface apresenta os dados para confirmação antes de adicioná-los.
+
 ---
 
 ## 🗄️ Modelagem do Sistema
