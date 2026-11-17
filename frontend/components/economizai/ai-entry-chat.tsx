@@ -12,7 +12,14 @@ import { Badge, Panel, PanelHeader } from './primitives'
 type Message =
   | { id: string; role: 'user'; text: string }
   | { id: string; role: 'ai'; status: 'thinking' }
-  | { id: string; role: 'ai'; status: 'parsed'; entry: ParsedEntry; state: 'pending' | 'saved' | 'discarded' }
+  | {
+      id: string
+      role: 'ai'
+      status: 'parsed'
+      entry: ParsedEntry
+      state: 'pending' | 'saving' | 'saved' | 'discarded'
+      saveError?: string
+    }
   | { id: string; role: 'ai'; status: 'error'; text: string }
 
 const SUGGESTIONS = [
@@ -119,15 +126,42 @@ export function AiEntryChat() {
     }
   }
 
-  function resolve(id: string, action: 'saved' | 'discarded') {
+  async function resolve(id: string, action: 'saved' | 'discarded') {
     const target = messages.find((msg) => msg.id === id)
     if (!target || target.role !== 'ai' || target.status !== 'parsed' || target.state !== 'pending') return
     if (action === 'saved') {
       const { confidence: _confidence, ...data } = target.entry
-      addTransaction({ ...data, source: 'ia' })
+      setMessages((current) =>
+        current.map((msg) =>
+          msg.id === id && msg.role === 'ai' && msg.status === 'parsed'
+            ? { ...msg, state: 'saving', saveError: undefined }
+            : msg,
+        ),
+      )
+      try {
+        await addTransaction({ ...data, source: 'ia' })
+      } catch (saveError) {
+        setMessages((current) =>
+          current.map((msg) =>
+            msg.id === id && msg.role === 'ai' && msg.status === 'parsed'
+              ? {
+                  ...msg,
+                  state: 'pending',
+                  saveError:
+                    saveError instanceof Error ? saveError.message : 'Não foi possível salvar o lançamento.',
+                }
+              : msg,
+          ),
+        )
+        return
+      }
     }
     setMessages((m) =>
-      m.map((msg) => (msg.id === id && msg.role === 'ai' && msg.status === 'parsed' ? { ...msg, state: action } : msg)),
+      m.map((msg) =>
+        msg.id === id && msg.role === 'ai' && msg.status === 'parsed'
+          ? { ...msg, state: action, saveError: undefined }
+          : msg,
+      ),
     )
   }
 
@@ -283,24 +317,31 @@ function ParsedCard({
       <p className="mt-3 text-[11px] text-muted-foreground">
         Confiança da extração: {Math.round(entry.confidence * 100)}%
       </p>
+      {message.saveError && (
+        <p role="alert" className="mt-2 text-xs text-destructive">
+          {message.saveError}
+        </p>
+      )}
       <div className="mt-3 border-t border-border/70 pt-3">
         {state === 'pending' ? (
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => onResolve(message.id, 'saved')}
+              onClick={() => void onResolve(message.id, 'saved')}
               className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary text-sm font-medium text-primary-foreground transition-all hover:brightness-105 active:scale-[0.98]"
             >
               <Check className="size-4" aria-hidden="true" /> Confirmar
             </button>
             <button
               type="button"
-              onClick={() => onResolve(message.id, 'discarded')}
+              onClick={() => void onResolve(message.id, 'discarded')}
               className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <X className="size-4" aria-hidden="true" /> Descartar
             </button>
           </div>
+        ) : state === 'saving' ? (
+          <p role="status" className="text-sm text-muted-foreground">Salvando lançamento…</p>
         ) : (
           <p className={cn('flex items-center gap-1.5 text-sm', state === 'saved' ? 'text-primary' : 'text-muted-foreground')}>
             {state === 'saved' ? (

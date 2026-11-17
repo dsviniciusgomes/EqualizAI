@@ -1,8 +1,11 @@
 'use client'
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import { getSupabaseClient } from '@/lib/supabase'
 import { buildSeed } from './seed'
 import { uid } from './format'
+import { createLancamento } from './api'
 import type { CreditCard, FutureEntry, InstallmentPurchase, Transaction, UserProfile } from './types'
 
 export type ViewId = 'dashboard' | 'lancamentos' | 'previsao' | 'cartoes' | 'perfil'
@@ -15,11 +18,12 @@ interface FinanceState {
   futures: FutureEntry[]
   cards: CreditCard[]
   installments: InstallmentPurchase[]
+  authReady: boolean
+  authError: string
   setView: (view: ViewId) => void
-  signIn: (data: { name?: string; email: string }) => void
-  signOut: () => void
+  signOut: () => Promise<void>
   updateUser: (data: Partial<UserProfile>) => void
-  addTransaction: (tx: Omit<Transaction, 'id'>) => Transaction
+  addTransaction: (tx: Omit<Transaction, 'id'>) => Promise<Transaction>
   removeTransaction: (id: string) => void
 }
 
@@ -34,13 +38,21 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [today] = useState(() => new Date())
   const [seed] = useState(() => buildSeed(today))
   const [user, setUser] = useState<UserProfile | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [accessToken, setAccessToken] = useState<string | null>(null)
+  const [authReady, setAuthReady] = useState(false)
+  const [authError, setAuthError] = useState('')
   const [view, setView] = useState<ViewId>('dashboard')
   const [transactions, setTransactions] = useState(seed.transactions)
 
-  const signIn = useCallback((data: { name?: string; email: string }) => {
+  const acceptSession = useCallback((session: Session, resetView: boolean) => {
+    const email = session.user.email ?? ''
+    const name = session.user.user_metadata.full_name ?? session.user.user_metadata.name
+    setUserId(session.user.id)
+    setAccessToken(session.access_token)
     setUser({
-      name: data.name?.trim() || nameFromEmail(data.email),
-      email: data.email,
+      name: typeof name === 'string' && name.trim() ? name.trim() : nameFromEmail(email),
+      email,
       phone: '',
       monthlyIncomeGoal: 10000,
       savingsGoal: 2500,
@@ -49,20 +61,101 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       weeklySummary: true,
       aiAutoCategorize: true,
     })
-    setView('dashboard')
+    if (resetView) setView('dashboard')
+    setAuthError('')
   }, [])
 
-  const signOut = useCallback(() => setUser(null), [])
+  const signOut = useCallback(async () => {
+    const { error } = await getSupabaseClient().auth.signOut()
+    if (error) setAuthError(error.message)
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    let sessionCheck = 0
+    let unsubscribe = () => {}
+
+    try {
+      const supabase = getSupabaseClient()
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        if (!active) return
+
+        const checkId = ++sessionCheck
+        if (!session) {
+          setUser(null)
+          setUserId(null)
+          setAccessToken(null)
+          setAuthReady(true)
+          return
+        }
+
+        setAuthReady(false)
+        setUser(null)
+        setUserId(null)
+        setAccessToken(null)
+
+        window.setTimeout(() => {
+          void (async () => {
+            let denialMessage = 'Sua conta aguarda aprovação do administrador.'
+            try {
+              const { data: profile, error } = await supabase
+                .from('usuario_perfil')
+                .select('status')
+                .eq('id', session.user.id)
+                .single()
+
+              if (error) {
+                if (error.code !== 'PGRST116') {
+                  denialMessage = 'Não foi possível verificar a aprovação da sua conta.'
+                }
+              } else if (profile.status === 'aprovado') {
+                if (!active || checkId !== sessionCheck) return
+                acceptSession(session, event === 'SIGNED_IN')
+                setAuthReady(true)
+                return
+              }
+            } catch {
+              denialMessage = 'Não foi possível verificar a aprovação da sua conta.'
+            }
+
+            if (!active || checkId !== sessionCheck) return
+            setAuthError(denialMessage)
+            try {
+              const { error } = await supabase.auth.signOut()
+              if (error) throw error
+            } catch (error) {
+              const detail = error instanceof Error ? error.message : 'Erro desconhecido.'
+              setAuthError(`${denialMessage} Não foi possível encerrar a sessão: ${detail}`)
+            } finally {
+              if (active && checkId === sessionCheck) setAuthReady(true)
+            }
+          })()
+        }, 0)
+      })
+      unsubscribe = () => data.subscription.unsubscribe()
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Não foi possível inicializar a autenticação.')
+      setAuthReady(true)
+    }
+
+    return () => {
+      active = false
+      sessionCheck += 1
+      unsubscribe()
+    }
+  }, [acceptSession])
   const updateUser = useCallback(
     (data: Partial<UserProfile>) => setUser((prev) => (prev ? { ...prev, ...data } : prev)),
     [],
   )
 
-  const addTransaction = useCallback((tx: Omit<Transaction, 'id'>) => {
+  const addTransaction = useCallback(async (tx: Omit<Transaction, 'id'>) => {
+    if (!userId || !accessToken) throw new Error('Sua sessão expirou. Entre novamente para salvar o lançamento.')
+    await createLancamento(tx, userId, accessToken)
     const created = { ...tx, id: uid() }
     setTransactions((prev) => [created, ...prev])
     return created
-  }, [])
+  }, [accessToken, userId])
 
   const removeTransaction = useCallback(
     (id: string) => setTransactions((prev) => prev.filter((t) => t.id !== id)),
@@ -78,14 +171,27 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       futures: seed.futures,
       cards: seed.cards,
       installments: seed.installments,
+      authReady,
+      authError,
       setView,
-      signIn,
       signOut,
       updateUser,
       addTransaction,
       removeTransaction,
     }),
-    [today, user, view, transactions, seed, signIn, signOut, updateUser, addTransaction, removeTransaction],
+    [
+      today,
+      user,
+      view,
+      transactions,
+      seed,
+      authReady,
+      authError,
+      signOut,
+      updateUser,
+      addTransaction,
+      removeTransaction,
+    ],
   )
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>
