@@ -9,7 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
-from typing import Optional
+from typing import Literal, Optional
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -55,6 +55,7 @@ class LancamentoCreate(BaseModel):
     description: Optional[str] = None
     amount: float = Field(gt=0)
     date: Optional[str] = "CURRENT_DATE"
+    tipo: Literal["receita", "despesa"]
     categoria_id: Optional[int] = None
     favorecido_id: Optional[int] = None
     banco_id: Optional[int] = None

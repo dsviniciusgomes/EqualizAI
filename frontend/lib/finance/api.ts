@@ -19,6 +19,7 @@ export async function createLancamento(transaction: Omit<Transaction, 'id'>) {
       description: transaction.description,
       amount: transaction.amount,
       date: transaction.date,
+      tipo: transaction.type,
     }),
   })
 
