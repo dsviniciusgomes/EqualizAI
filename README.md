@@ -22,9 +22,9 @@ O front-end é uma aplicação Next.js. Configure `NEXT_PUBLIC_API_URL` como a U
 
 No backend, `FRONTEND_ORIGINS` aceita uma lista de origens separadas por vírgula. Por padrão, são permitidos `localhost` e `127.0.0.1` nas portas 3000 e 5173, além de origens HTTPS de projetos `vercel.app`. Inclua o domínio de produção personalizado em `FRONTEND_ORIGINS`.
 
-O endpoint recebe `{"texto":"Gastei 45 no mercado hoje"}` e retorna a extração da IA. Ele não grava o lançamento: a interface apresenta os dados para confirmação antes de adicioná-los.
+O endpoint recebe `{"texto":"Gastei 45 no mercado hoje"}` e retorna a extração da IA. Ele não grava o lançamento: a interface apresenta os dados para confirmação antes de adicioná-los. A chamada exige um token de sessão válido de uma conta aprovada.
 
-Ao confirmar, o front-end recupera a sessão atual do Supabase e envia o access token como `Authorization: Bearer`. O backend valida o JWT, define `user_id` pelo usuário validado e executa a inserção usando esse JWT para que as políticas de RLS sejam aplicadas. O cliente não deve enviar `user_id` no corpo da requisição.
+O front-end envia o access token como `Authorization: Bearer` nas chamadas da API. O backend valida o JWT e a aprovação da conta; a listagem filtra pelo usuário autenticado, e a criação define `user_id` pelo usuário validado. As operações no Supabase usam esse JWT para que as políticas de RLS sejam aplicadas. O cliente não deve enviar `user_id` no corpo da requisição.
 
 ---
 
@@ -36,7 +36,7 @@ Configure estas variáveis no ambiente de execução do Next.js:
 * `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 * `NEXT_PUBLIC_API_URL` (URL base do FastAPI; em produção, configure a URL pública do backend)
 
-O frontend usa as variáveis do Supabase para autenticar o usuário e envia os lançamentos para `/lancamentos` na API configurada, com o token da sessão no cabeçalho `Authorization: Bearer`.
+O frontend usa as variáveis do Supabase para autenticar o usuário e envia as chamadas protegidas à API configurada, incluindo `/lancamentos` e `/ia/processar-transacao`, com o token da sessão no cabeçalho `Authorization: Bearer`.
 
 Após login ou restauração da sessão, o frontend verifica `usuario_perfil.status`; somente contas com status `aprovado` acessam o painel.
 

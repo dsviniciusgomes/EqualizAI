@@ -6,6 +6,7 @@ import { useFinance } from '@/lib/finance/store'
 import { parseNaturalLanguage, type ParsedEntry } from '@/lib/finance/ai-parser'
 import { formatBRL, formatFullDate } from '@/lib/finance/format'
 import { getApiUrl } from '@/lib/api'
+import { getSupabaseClient } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { Badge, Panel, PanelHeader } from './primitives'
 
@@ -74,10 +75,18 @@ export function AiEntryChat() {
     setBusy(true)
 
     try {
+      const { data: sessionData, error: sessionError } = await getSupabaseClient().auth.getSession()
+      if (sessionError) throw new Error(`Não foi possível recuperar a sessão do Supabase: ${sessionError.message}`)
+      const accessToken = sessionData.session?.access_token
+      if (!accessToken) throw new Error('Sua sessão expirou. Entre novamente para usar a interpretação por IA.')
+
       const url = getApiUrl('/ia/processar-transacao')
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ texto: trimmed }),
       })
 

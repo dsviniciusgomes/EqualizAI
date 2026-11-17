@@ -86,37 +86,68 @@ def get_authenticated_user(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
+def get_user_supabase_client(access_token: str):
+    user_supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    user_supabase.postgrest.auth(access_token)
+    return user_supabase
+
+def get_approved_authenticated_user(
+    authenticated: tuple = Depends(get_authenticated_user),
+):
+    user, access_token = authenticated
+    profile_response = (
+        get_user_supabase_client(access_token)
+        .table("usuario_perfil")
+        .select("status")
+        .eq("id", user.id)
+        .limit(1)
+        .execute()
+    )
+    profiles = profile_response.data
+    if not profiles or profiles[0].get("status") != "aprovado":
+        raise HTTPException(status_code=403, detail="Sua conta ainda não foi aprovada.")
+    return authenticated
+
 @app.get("/")
 def read_root():
     return {"status": "API rodando perfeitamente!", "projeto": "AI Finance Builder"}
 
-# Rota GET: Lista todos os lançamentos
+# Rota GET: Lista os lançamentos do usuário autenticado
 @app.get("/lancamentos")
-def get_lancamentos():
+def get_lancamentos(
+    authenticated: tuple = Depends(get_approved_authenticated_user),
+):
+    user, access_token = authenticated
     try:
-        response = supabase.table("lancamento").select("*").execute()
+        response = (
+            get_user_supabase_client(access_token)
+            .table("lancamento")
+            .select("*")
+            .eq("user_id", user.id)
+            .execute()
+        )
         return {"data": response.data}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.exception("Falha ao carregar lançamentos do usuário autenticado.")
+        raise HTTPException(status_code=500, detail="Não foi possível carregar os lançamentos.") from e
 
 # Rota POST: insere o lançamento no contexto autenticado do usuário
 @app.post("/lancamentos")
 def create_lancamento(
     lancamento: LancamentoCreate,
-    authenticated: tuple = Depends(get_authenticated_user),
+    authenticated: tuple = Depends(get_approved_authenticated_user),
 ):
     user, access_token = authenticated
     data = lancamento.model_dump(exclude_none=True)
     data["user_id"] = user.id
 
     try:
-        user_supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        user_supabase.postgrest.auth(access_token)
+        user_supabase = get_user_supabase_client(access_token)
         response = user_supabase.table("lancamento").insert(data).execute()
         return {"message": "Lançamento cadastrado com sucesso!", "data": response.data}
     except Exception as e:
         logging.exception("Falha ao inserir lançamento para o usuário autenticado.")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Não foi possível salvar o lançamento.") from e
 
 @app.get("/")
 def home():
@@ -137,7 +168,10 @@ class ExtracaoTransacao(BaseModel):
 
 # Rota inteligente com IA de verdade (Gemini)
 @app.post("/ia/processar-transacao")
-def processar_transacao_com_ia(dados: TransacaoTexto):
+def processar_transacao_com_ia(
+    dados: TransacaoTexto,
+    _authenticated: tuple = Depends(get_approved_authenticated_user),
+):
     try:
         # 1. Prompt estruturado para a IA extrair os dados da frase
         prompt = f"""
