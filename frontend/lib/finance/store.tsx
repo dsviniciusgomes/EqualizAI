@@ -38,8 +38,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [today] = useState(() => new Date())
   const [seed] = useState(() => buildSeed(today))
   const [user, setUser] = useState<UserProfile | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
-  const [accessToken, setAccessToken] = useState<string | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [authError, setAuthError] = useState('')
   const [view, setView] = useState<ViewId>('dashboard')
@@ -48,8 +46,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const acceptSession = useCallback((session: Session, resetView: boolean) => {
     const email = session.user.email ?? ''
     const name = session.user.user_metadata.full_name ?? session.user.user_metadata.name
-    setUserId(session.user.id)
-    setAccessToken(session.access_token)
     setUser({
       name: typeof name === 'string' && name.trim() ? name.trim() : nameFromEmail(email),
       email,
@@ -83,16 +79,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         const checkId = ++sessionCheck
         if (!session) {
           setUser(null)
-          setUserId(null)
-          setAccessToken(null)
           setAuthReady(true)
           return
         }
 
         setAuthReady(false)
         setUser(null)
-        setUserId(null)
-        setAccessToken(null)
 
         window.setTimeout(() => {
           void (async () => {
@@ -150,12 +142,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   )
 
   const addTransaction = useCallback(async (tx: Omit<Transaction, 'id'>) => {
-    if (!userId || !accessToken) throw new Error('Sua sessão expirou. Entre novamente para salvar o lançamento.')
-    await createLancamento(tx, userId, accessToken)
+    await createLancamento(tx)
     const created = { ...tx, id: uid() }
     setTransactions((prev) => [created, ...prev])
     return created
-  }, [accessToken, userId])
+  }, [])
 
   const removeTransaction = useCallback(
     (id: string) => setTransactions((prev) => prev.filter((t) => t.id !== id)),

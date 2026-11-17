@@ -3,8 +3,9 @@ import json
 import logging
 from datetime import date
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
@@ -52,13 +53,37 @@ app.add_middleware(
 # Modelo Pydantic baseado exatamente nas colunas da sua tabela 'lancamento'
 class LancamentoCreate(BaseModel):
     description: Optional[str] = None
-    amount: float
+    amount: float = Field(gt=0)
     date: Optional[str] = "CURRENT_DATE"
-    user_id: str  # UUID do usuário no Supabase Auth
     categoria_id: Optional[int] = None
     favorecido_id: Optional[int] = None
     banco_id: Optional[int] = None
     forma_pagamento_id: Optional[int] = None
+
+bearer_scheme = HTTPBearer(auto_error=False)
+
+def get_authenticated_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+):
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=401,
+            detail="Token de autenticação obrigatório.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        auth_response = supabase.auth.get_user(credentials.credentials)
+        if auth_response.user is None:
+            raise ValueError("O token não está associado a um usuário.")
+        return auth_response.user, credentials.credentials
+    except Exception as exc:
+        logging.info("Requisição rejeitada: token Supabase inválido ou expirado.")
+        raise HTTPException(
+            status_code=401,
+            detail="Token de autenticação inválido ou expirado.",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
 
 @app.get("/")
 def read_root():
@@ -73,43 +98,29 @@ def get_lancamentos():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Rota POST: Insere um novo lançamento respeitando o seu banco
+# Rota POST: insere o lançamento no contexto autenticado do usuário
 @app.post("/lancamentos")
-def create_lancamento(lancamento: LancamentoCreate):
+def create_lancamento(
+    lancamento: LancamentoCreate,
+    authenticated: tuple = Depends(get_authenticated_user),
+):
+    user, access_token = authenticated
+    data = lancamento.model_dump(exclude_none=True)
+    data["user_id"] = user.id
+
     try:
-        data = {
-            "description": lancamento.description,
-            "amount": lancamento.amount,
-            "date": lancamento.date,
-            "user_id": lancamento.user_id,
-            "categoria_id": lancamento.categoria_id,
-            "favorecido_id": lancamento.favorecido_id,
-            "banco_id": lancamento.banco_id,
-            "forma_pagamento_id": lancamento.forma_pagamento_id
-        }
-        # Remove campos nulos/opcionais se necessário, mas o supabase lida bem com None
-        response = supabase.table("lancamento").insert(data).execute()
+        user_supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        user_supabase.postgrest.auth(access_token)
+        response = user_supabase.table("lancamento").insert(data).execute()
         return {"message": "Lançamento cadastrado com sucesso!", "data": response.data}
     except Exception as e:
+        logging.exception("Falha ao inserir lançamento para o usuário autenticado.")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
 def home():
     return {"status": "EcomizAI API rodando com sucesso!"}
 
-
-# Rota padrão para cadastro manual de lançamentos
-@app.post("/lancamentos")
-def criar_lancamento(lancamento: LancamentoCreate):
-    try:
-        dados_dict = lancamento.model_dump()
-        response = supabase.table("lancamento").insert(dados_dict).execute()
-        return {
-            "mensagem": "Lançamento cadastrado com sucesso!",
-            "dados": response.data
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 #Endpoint IA
 

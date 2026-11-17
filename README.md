@@ -24,6 +24,8 @@ No backend, `FRONTEND_ORIGINS` aceita uma lista de origens separadas por vírgul
 
 O endpoint recebe `{"texto":"Gastei 45 no mercado hoje"}` e retorna a extração da IA. Ele não grava o lançamento: a interface apresenta os dados para confirmação antes de adicioná-los.
 
+Ao confirmar, o front-end recupera a sessão atual do Supabase e envia o access token como `Authorization: Bearer`. O backend valida o JWT, define `user_id` pelo usuário validado e executa a inserção usando esse JWT para que as políticas de RLS sejam aplicadas. O cliente não deve enviar `user_id` no corpo da requisição.
+
 ---
 
 ## ⚙️ Configuração do frontend
@@ -32,8 +34,9 @@ Configure estas variáveis no ambiente de execução do Next.js:
 
 * `NEXT_PUBLIC_SUPABASE_URL`
 * `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+* `NEXT_PUBLIC_API_URL` (URL base do FastAPI; em produção, configure a URL pública do backend)
 
-O frontend usa essas variáveis para autenticar com o Supabase. Os lançamentos são enviados para `https://equalizai.onrender.com/lancamentos` com o token da sessão no cabeçalho `Authorization: Bearer`.
+O frontend usa as variáveis do Supabase para autenticar o usuário e envia os lançamentos para `/lancamentos` na API configurada, com o token da sessão no cabeçalho `Authorization: Bearer`.
 
 Após login ou restauração da sessão, o frontend verifica `usuario_perfil.status`; somente contas com status `aprovado` acessam o painel.
 
