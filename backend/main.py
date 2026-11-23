@@ -143,7 +143,7 @@ def create_lancamento(
 
     try:
         user_supabase = get_user_supabase_client(access_token)
-        response = user_supabase.table("lancamento").insert(data).execute()
+        response = user_supabase.table("lancamento").insert(data).select("id").execute()
         return {"message": "Lançamento cadastrado com sucesso!", "data": response.data}
     except Exception as e:
         logging.exception("Falha ao inserir lançamento para o usuário autenticado.")

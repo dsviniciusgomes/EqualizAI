@@ -4,8 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import type { Session } from '@supabase/supabase-js'
 import { getSupabaseClient } from '@/lib/supabase'
 import { buildSeed } from './seed'
-import { uid } from './format'
-import { createLancamento } from './api'
+import { createLancamento, mapLancamento } from './api'
 import type { CreditCard, FutureEntry, InstallmentPurchase, Transaction, UserProfile } from './types'
 
 export type ViewId = 'dashboard' | 'lancamentos' | 'perfil'
@@ -20,11 +19,13 @@ interface FinanceState {
   installments: InstallmentPurchase[]
   authReady: boolean
   authError: string
+  transactionsLoading: boolean
+  transactionsError: string
   setView: (view: ViewId) => void
   signOut: () => Promise<void>
   updateUser: (data: Partial<UserProfile>) => void
   addTransaction: (tx: Omit<Transaction, 'id'>) => Promise<Transaction>
-  removeTransaction: (id: string) => void
+  removeTransaction: (id: string) => Promise<void>
 }
 
 const FinanceContext = createContext<FinanceState | null>(null)
@@ -40,8 +41,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [authError, setAuthError] = useState('')
+  const [transactionsLoading, setTransactionsLoading] = useState(false)
+  const [transactionsError, setTransactionsError] = useState('')
   const [view, setView] = useState<ViewId>('dashboard')
-  const [transactions, setTransactions] = useState(seed.transactions)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
 
   const acceptSession = useCallback((session: Session, resetView: boolean) => {
     const email = session.user.email ?? ''
@@ -79,12 +82,18 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         const checkId = ++sessionCheck
         if (!session) {
           setUser(null)
+          setTransactions([])
+          setTransactionsLoading(false)
+          setTransactionsError('')
           setAuthReady(true)
           return
         }
 
         setAuthReady(false)
         setUser(null)
+        setTransactions([])
+        setTransactionsLoading(true)
+        setTransactionsError('')
 
         window.setTimeout(() => {
           void (async () => {
@@ -102,7 +111,30 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 }
               } else if (profile.status === 'aprovado') {
                 if (!active || checkId !== sessionCheck) return
+
+                let loadedTransactions: Transaction[] = []
+                let loadError = ''
+                try {
+                  const { data: rows, error: transactionsQueryError } = await supabase
+                    .from('lancamento')
+                    .select('*')
+                    .eq('user_id', session.user.id)
+                    .order('date', { ascending: false })
+
+                  if (transactionsQueryError) throw transactionsQueryError
+                  loadedTransactions = (rows ?? []).map((row) =>
+                    mapLancamento(row as Record<string, unknown>),
+                  )
+                } catch (error) {
+                  console.error('Falha ao carregar os lançamentos:', error)
+                  loadError = 'Não foi possível carregar seus lançamentos. Tente novamente mais tarde.'
+                }
+
+                if (!active || checkId !== sessionCheck) return
                 acceptSession(session, event === 'SIGNED_IN')
+                setTransactions(loadedTransactions)
+                setTransactionsError(loadError)
+                setTransactionsLoading(false)
                 setAuthReady(true)
                 return
               }
@@ -142,16 +174,24 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   )
 
   const addTransaction = useCallback(async (tx: Omit<Transaction, 'id'>) => {
-    await createLancamento(tx)
-    const created = { ...tx, id: uid() }
+    const id = await createLancamento(tx)
+    const created = { ...tx, id }
     setTransactions((prev) => [created, ...prev])
     return created
   }, [])
 
-  const removeTransaction = useCallback(
-    (id: string) => setTransactions((prev) => prev.filter((t) => t.id !== id)),
-    [],
-  )
+  const removeTransaction = useCallback(async (id: string) => {
+    const { data, error } = await getSupabaseClient()
+      .from('lancamento')
+      .delete()
+      .eq('id', id)
+      .select('id')
+      .maybeSingle()
+
+    if (error) throw new Error(error.message)
+    if (!data) throw new Error('Lançamento não encontrado ou sem permissão para exclusão.')
+    setTransactions((prev) => prev.filter((transaction) => transaction.id !== id))
+  }, [])
 
   const value = useMemo<FinanceState>(
     () => ({
@@ -164,6 +204,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       installments: seed.installments,
       authReady,
       authError,
+      transactionsLoading,
+      transactionsError,
       setView,
       signOut,
       updateUser,
@@ -178,6 +220,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       seed,
       authReady,
       authError,
+      transactionsLoading,
+      transactionsError,
       signOut,
       updateUser,
       addTransaction,

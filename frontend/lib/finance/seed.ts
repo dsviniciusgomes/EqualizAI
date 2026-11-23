@@ -3,64 +3,11 @@ import type {
   CreditCard,
   FutureEntry,
   InstallmentPurchase,
-  PaymentMethod,
-  Transaction,
 } from './types'
 
-type Template = [string, number, number, string, PaymentMethod]
-
-const EXPENSES: Template[] = [
-  ['Aluguel', 2200, 5, 'Moradia', 'Boleto'],
-  ['Supermercado Pão de Açúcar', 486.3, 3, 'Mercado', 'Cartão de crédito'],
-  ['Uber', 32.9, 4, 'Transporte', 'Cartão de crédito'],
-  ['Netflix', 55.9, 6, 'Assinaturas', 'Cartão de crédito'],
-  ['Spotify', 21.9, 7, 'Assinaturas', 'Cartão de crédito'],
-  ['Restaurante Madero', 128.5, 8, 'Alimentação', 'Cartão de crédito'],
-  ['Farmácia Drogasil', 74.2, 9, 'Saúde', 'Cartão de débito'],
-  ['Posto Shell', 220, 10, 'Transporte', 'Cartão de crédito'],
-  ['Energia elétrica', 189.4, 12, 'Moradia', 'Boleto'],
-  ['Cinema', 64, 14, 'Lazer', 'Pix'],
-  ['Curso Alura', 89.9, 15, 'Educação', 'Cartão de crédito'],
-  ['Hortifruti', 142.8, 17, 'Mercado', 'Pix'],
-  ['iFood', 67.4, 19, 'Alimentação', 'Cartão de crédito'],
-  ['Academia', 119.9, 20, 'Saúde', 'Cartão de débito'],
-  ['Internet fibra', 99.9, 22, 'Moradia', 'Boleto'],
-  ['Amazon', 239, 24, 'Compras', 'Cartão de crédito'],
-  ['Padaria', 28.5, 26, 'Alimentação', 'Dinheiro'],
-]
-
-const INCOMES: Template[] = [
-  ['Salário', 8500, 5, 'Salário', 'Transferência'],
-  ['Freelance — design', 1800, 18, 'Freelance', 'Pix'],
-]
-
 export function buildSeed(today: Date) {
-  const transactions: Transaction[] = []
   const year = today.getFullYear()
   const month = today.getMonth()
-  const currentDay = today.getDate()
-
-  for (let back = 5; back >= 0; back--) {
-    const isCurrent = back === 0
-    const variation = (k: number) => 1 + (((back * 7 + k * 13) % 21) - 10) / 100
-    ;[...INCOMES, ...EXPENSES].forEach(([description, amount, day, category, payment], k) => {
-      if (isCurrent && day > currentDay) return
-      const isIncome = k < INCOMES.length
-      const fixed = isIncome && k === 0
-      const skipFreelance = isIncome && k === 1 && back % 2 === 1
-      if (skipFreelance) return
-      transactions.push({
-        id: `seed-${back}-${k}`,
-        description,
-        amount: Math.round(amount * (fixed || description === 'Aluguel' ? 1 : variation(k)) * 100) / 100,
-        date: toISODate(new Date(year, month - back, day)),
-        category,
-        type: isIncome ? 'receita' : 'despesa',
-        payment,
-        source: 'manual',
-      })
-    })
-  }
 
   const futures: FutureEntry[] = []
   for (let ahead = 1; ahead <= 6; ahead++) {
@@ -95,5 +42,5 @@ export function buildSeed(today: Date) {
     { id: 'i6', cardId: 'inter', description: 'Tênis Nike Pegasus', total: 780, count: 3, paid: 2, purchaseDate: purchase(1) },
   ]
 
-  return { transactions, futures, cards, installments }
+  return { futures, cards, installments }
 }

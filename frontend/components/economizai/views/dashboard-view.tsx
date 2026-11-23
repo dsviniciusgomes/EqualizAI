@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowDownCircle, ArrowRight, ArrowUpCircle, PiggyBank, Plus } from 'lucide-react'
 import { getSupabaseClient } from '@/lib/supabase'
 import { useFinance } from '@/lib/finance/store'
-import { PAYMENT_METHODS, type Transaction } from '@/lib/finance/types'
+import { mapLancamento } from '@/lib/finance/api'
+import type { Transaction } from '@/lib/finance/types'
 import { expensesByCategory, lastMonthsComparison } from '@/lib/finance/selectors'
 import { longMonth } from '@/lib/finance/format'
 import { Button } from '@/components/ui/button'
@@ -16,35 +17,6 @@ interface DashboardData {
   transactions: Transaction[]
   openingBalance: number
   accountCount: number
-}
-
-function mapTransaction(row: Record<string, unknown>): Transaction {
-  const amount = Number(row.amount)
-  const type = row.tipo
-
-  if (
-    (typeof row.id !== 'string' && typeof row.id !== 'number') ||
-    typeof row.date !== 'string' ||
-    !Number.isFinite(amount) ||
-    (type !== 'receita' && type !== 'despesa')
-  ) {
-    throw new Error('A tabela lancamento contém um registro com dados inválidos.')
-  }
-
-  const category = row.category ?? row.categoria
-  const payment = row.payment ?? row.forma_pagamento
-  const paymentMethod = PAYMENT_METHODS.find((method) => method === payment) ?? 'Pix'
-
-  return {
-    id: String(row.id),
-    description: typeof row.description === 'string' ? row.description : 'Lançamento',
-    amount: Math.abs(amount),
-    date: row.date,
-    category: typeof category === 'string' ? category : 'Outros',
-    type,
-    payment: paymentMethod,
-    source: row.source === 'ia' ? 'ia' : 'manual',
-  }
 }
 
 export function DashboardView() {
@@ -76,7 +48,7 @@ export function DashboardView() {
         if (accountResult.error) throw accountResult.error
 
         const transactions = (launchResult.data ?? []).map((row) =>
-          mapTransaction(row as Record<string, unknown>),
+          mapLancamento(row as Record<string, unknown>),
         )
         const openingBalance = (accountResult.data ?? []).reduce((total, account) => {
           const balance = Number(account.saldo_inicial ?? 0)

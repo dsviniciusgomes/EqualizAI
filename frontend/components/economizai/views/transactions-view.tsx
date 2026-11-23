@@ -11,9 +11,11 @@ import { AiEntryChat } from '../ai-entry-chat'
 type Filter = 'todos' | 'receita' | 'despesa'
 
 export function TransactionsView() {
-  const { transactions, removeTransaction } = useFinance()
+  const { transactions, removeTransaction, transactionsLoading, transactionsError } = useFinance()
   const [filter, setFilter] = useState<Filter>('todos')
   const [query, setQuery] = useState('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState('')
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -23,6 +25,20 @@ export function TransactionsView() {
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 40)
   }, [transactions, filter, query])
+
+  async function handleRemove(id: string) {
+    setDeletingId(id)
+    setDeleteError('')
+    try {
+      await removeTransaction(id)
+    } catch (error) {
+      console.error('Falha ao excluir lançamento:', error)
+      const detail = error instanceof Error ? error.message : 'Erro desconhecido.'
+      setDeleteError(`Não foi possível apagar o lançamento. Confira as permissões de acesso. ${detail}`)
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -69,10 +85,30 @@ export function TransactionsView() {
           />
         </div>
         <ul className="flex flex-col p-3">
-          {list.map((tx) => (
-            <TransactionRow key={tx.id} tx={tx} onRemove={removeTransaction} />
+          {transactionsLoading && (
+            <li role="status" className="py-12 text-center text-sm text-muted-foreground">
+              Carregando lançamentos…
+            </li>
+          )}
+          {transactionsError && (
+            <li role="alert" className="py-6 text-center text-sm text-destructive">
+              {transactionsError}
+            </li>
+          )}
+          {deleteError && (
+            <li role="alert" className="px-3 py-3 text-sm text-destructive">
+              {deleteError}
+            </li>
+          )}
+          {!transactionsLoading && !transactionsError && list.map((tx) => (
+            <TransactionRow
+              key={tx.id}
+              tx={tx}
+              onRemove={(id) => void handleRemove(id)}
+              removing={deletingId === tx.id}
+            />
           ))}
-          {!list.length && (
+          {!transactionsLoading && !transactionsError && !list.length && (
             <li className="py-12 text-center text-sm text-muted-foreground">Nenhum lançamento encontrado.</li>
           )}
         </ul>

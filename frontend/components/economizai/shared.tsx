@@ -78,7 +78,15 @@ export function Amount({ value, type, className }: { value: number; type: Transa
   )
 }
 
-export function TransactionRow({ tx, onRemove }: { tx: Transaction; onRemove?: (id: string) => void }) {
+export function TransactionRow({
+  tx,
+  onRemove,
+  removing = false,
+}: {
+  tx: Transaction
+  onRemove?: (id: string) => void
+  removing?: boolean
+}) {
   return (
     <li className="group flex items-center gap-4 rounded-xl px-3 py-3 transition-colors duration-200 hover:bg-muted/60">
       <CategoryIcon category={tx.category} type={tx.type} />
@@ -104,8 +112,9 @@ export function TransactionRow({ tx, onRemove }: { tx: Transaction; onRemove?: (
         <button
           type="button"
           onClick={() => onRemove(tx.id)}
+          disabled={removing}
           aria-label={`Remover ${tx.description}`}
-          className="flex size-8 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-all hover:bg-danger-soft hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+          className="flex size-8 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-all hover:bg-danger-soft hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-wait disabled:opacity-50"
         >
           <Trash2 className="size-4" />
         </button>
