@@ -31,10 +31,13 @@ export interface Transaction {
   amount: number
   date: string
   category: string
+  categoriaId?: number
   type: TxType
   payment: PaymentMethod
   source: 'manual' | 'ia'
 }
+
+export type NewTransaction = Omit<Transaction, 'id'> & { categoriaId: number }
 
 export interface FutureEntry {
   id: string

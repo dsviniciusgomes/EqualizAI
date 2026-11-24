@@ -1,18 +1,27 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Check, PencilLine } from 'lucide-react'
 import { useFinance } from '@/lib/finance/store'
 import { toISODate } from '@/lib/finance/format'
 import {
-  EXPENSE_CATEGORIES,
-  INCOME_CATEGORIES,
   PAYMENT_METHODS,
   type PaymentMethod,
   type TxType,
 } from '@/lib/finance/types'
 import { Button } from '@/components/ui/button'
 import { Field, Panel, PanelHeader, Segmented, SelectInput, TextInput } from './primitives'
+import { getSupabaseClient } from '@/lib/supabase'
+
+interface Category {
+  id: number
+  name: string
+  type: 'income' | 'expense'
+}
+
+function categoryTypeForTransaction(type: TxType): Category['type'] {
+  return type === 'receita' ? 'income' : 'expense'
+}
 
 export function ManualEntryForm() {
   const { addTransaction, today } = useFinance()
@@ -20,17 +29,77 @@ export function ManualEntryForm() {
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(() => toISODate(today))
-  const [category, setCategory] = useState<string>(EXPENSE_CATEGORIES[0])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [categoryId, setCategoryId] = useState('')
+  const [categoriesLoading, setCategoriesLoading] = useState(true)
+  const [categoriesError, setCategoriesError] = useState('')
   const [payment, setPayment] = useState<PaymentMethod>('Pix')
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const categories = type === 'receita' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
+  useEffect(() => {
+    let active = true
+
+    async function loadCategories() {
+      try {
+        const supabase = getSupabaseClient()
+        const { data: userData, error: userError } = await supabase.auth.getUser()
+        if (userError) throw userError
+        if (!userData.user) throw new Error('Sua sessão expirou. Entre novamente para carregar as categorias.')
+
+        const { data, error: categoriesQueryError } = await supabase
+          .from('categoria')
+          .select('id, name, type')
+          .eq('user_id', userData.user.id)
+        if (categoriesQueryError) throw categoriesQueryError
+
+        const loadedCategories = (data ?? []).map((row) => {
+          const id = Number(row.id)
+          if (
+            !Number.isSafeInteger(id) ||
+            typeof row.name !== 'string' ||
+            (row.type !== 'income' && row.type !== 'expense')
+          ) {
+            throw new Error('Uma categoria cadastrada contém dados inválidos.')
+          }
+          return { id, name: row.name, type: row.type }
+        })
+
+        if (active) setCategories(loadedCategories)
+      } catch (loadError) {
+        console.error('Falha ao carregar categorias do usuário:', loadError)
+        if (active) {
+          setCategoriesError(
+            loadError instanceof Error ? loadError.message : 'Não foi possível carregar suas categorias.',
+          )
+        }
+      } finally {
+        if (active) setCategoriesLoading(false)
+      }
+    }
+
+    void loadCategories()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const matchingCategories = useMemo(
+    () => categories.filter((category) => category.type === categoryTypeForTransaction(type)),
+    [categories, type],
+  )
+
+  useEffect(() => {
+    if (!matchingCategories.some((category) => String(category.id) === categoryId)) {
+      setCategoryId(matchingCategories[0] ? String(matchingCategories[0].id) : '')
+    }
+  }, [categoryId, matchingCategories])
 
   function changeType(next: TxType) {
     setType(next)
-    setCategory(next === 'receita' ? INCOME_CATEGORIES[0] : EXPENSE_CATEGORIES[0])
+    const nextCategory = categories.find((category) => category.type === categoryTypeForTransaction(next))
+    setCategoryId(nextCategory ? String(nextCategory.id) : '')
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -39,6 +108,14 @@ export function ManualEntryForm() {
     if (!description.trim()) return setError('Informe uma descrição.')
     if (!Number.isFinite(value) || value <= 0) return setError('Informe um valor maior que zero.')
     if (!date) return setError('Informe a data.')
+    const selectedCategory = matchingCategories.find((category) => String(category.id) === categoryId)
+    if (!selectedCategory) {
+      return setError(
+        matchingCategories.length
+          ? 'Selecione uma categoria para este lançamento.'
+          : `Cadastre uma categoria de ${type === 'receita' ? 'receita' : 'despesa'} antes de continuar.`,
+      )
+    }
     setError('')
     setSaving(true)
     try {
@@ -46,7 +123,8 @@ export function ManualEntryForm() {
         description: description.trim(),
         amount: Math.round(value * 100) / 100,
         date,
-        category,
+        category: selectedCategory.name,
+        categoriaId: selectedCategory.id,
         type,
         payment,
         source: 'manual',
@@ -111,9 +189,16 @@ export function ManualEntryForm() {
 
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <Field label="Categoria" htmlFor="m-cat">
-            <SelectInput id="m-cat" value={category} onChange={(e) => setCategory(e.target.value)}>
-              {categories.map((c) => (
-                <option key={c}>{c}</option>
+            <SelectInput
+              id="m-cat"
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              disabled={categoriesLoading || !!categoriesError || matchingCategories.length === 0}
+            >
+              {matchingCategories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
               ))}
             </SelectInput>
           </Field>
@@ -130,6 +215,21 @@ export function ManualEntryForm() {
           </Field>
         </div>
 
+        {(categoriesLoading || categoriesError || categories.length === 0 || matchingCategories.length === 0) && (
+          <p
+            role="status"
+            className={categoriesError ? 'text-[13px] text-destructive' : 'text-[13px] text-muted-foreground'}
+          >
+            {categoriesLoading
+              ? 'Carregando suas categorias…'
+              : categoriesError
+                ? `Não foi possível carregar as categorias: ${categoriesError}`
+                : categories.length === 0
+                  ? 'Você ainda não tem categorias cadastradas. Cadastre uma categoria antes de criar um lançamento.'
+                  : `Você ainda não tem categorias de ${type === 'receita' ? 'receita' : 'despesa'}. Cadastre uma para continuar.`}
+          </p>
+        )}
+
         <div className="flex items-center justify-between gap-4 pt-1">
           <p role="status" aria-live="polite" className="text-[13px]">
             {error ? (
@@ -140,7 +240,11 @@ export function ManualEntryForm() {
               </span>
             ) : null}
           </p>
-          <Button type="submit" disabled={saving} className="h-11 rounded-xl px-5">
+          <Button
+            type="submit"
+            disabled={saving || categoriesLoading || !!categoriesError || matchingCategories.length === 0}
+            className="h-11 rounded-xl px-5"
+          >
             {saving ? 'Salvando…' : 'Salvar lançamento'}
           </Button>
         </div>

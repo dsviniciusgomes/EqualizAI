@@ -33,6 +33,9 @@ interface AiExtraction {
   description: string
   amount: number
   date: string
+  categoria_id: number
+  categoria: string
+  tipo: 'receita' | 'despesa'
 }
 
 function isAiExtractionResponse(value: unknown): value is { extracao_ia: AiExtraction } {
@@ -50,7 +53,15 @@ function isAiExtractionResponse(value: unknown): value is { extracao_ia: AiExtra
     extraction.amount > 0 &&
     'date' in extraction &&
     typeof extraction.date === 'string' &&
-    /^\d{4}-\d{2}-\d{2}$/.test(extraction.date)
+    /^\d{4}-\d{2}-\d{2}$/.test(extraction.date) &&
+    'categoria_id' in extraction &&
+    typeof extraction.categoria_id === 'number' &&
+    Number.isSafeInteger(extraction.categoria_id) &&
+    'categoria' in extraction &&
+    typeof extraction.categoria === 'string' &&
+    extraction.categoria.trim().length > 0 &&
+    'tipo' in extraction &&
+    (extraction.tipo === 'receita' || extraction.tipo === 'despesa')
   )
 }
 
@@ -92,7 +103,21 @@ export function AiEntryChat() {
 
       if (!response.ok) {
         const details = await response.text()
-        throw new Error(`HTTP ${response.status} ${response.statusText}: ${details || 'resposta sem detalhes'}`)
+        let errorMessage = `HTTP ${response.status} ${response.statusText}: ${details || 'resposta sem detalhes'}`
+        try {
+          const errorPayload: unknown = JSON.parse(details)
+          if (
+            typeof errorPayload === 'object' &&
+            errorPayload !== null &&
+            'detail' in errorPayload &&
+            typeof errorPayload.detail === 'string'
+          ) {
+            errorMessage = errorPayload.detail
+          }
+        } catch {
+          // Keep the response text when the API does not return JSON.
+        }
+        throw new Error(errorMessage)
       }
 
       const payload: unknown = await response.json()
@@ -105,8 +130,9 @@ export function AiEntryChat() {
         description: payload.extracao_ia.description.trim(),
         amount: payload.extracao_ia.amount,
         date: payload.extracao_ia.date,
-        category: localEntry?.category ?? 'Outros',
-        type: localEntry?.type ?? 'despesa',
+        category: payload.extracao_ia.categoria,
+        categoriaId: payload.extracao_ia.categoria_id,
+        type: payload.extracao_ia.tipo,
         payment: localEntry?.payment ?? 'Pix',
         confidence: localEntry ? Math.max(localEntry.confidence, 0.8) : 0.75,
       }
@@ -125,7 +151,9 @@ export function AiEntryChat() {
                 id: aiId,
                 role: 'ai',
                 status: 'error',
-                text: 'Não foi possível processar sua movimentação. Verifique a conexão com a API e tente novamente.',
+                text: error instanceof Error
+                  ? error.message
+                  : 'Não foi possível processar sua movimentação. Verifique a conexão com a API e tente novamente.',
               }
             : msg,
         ),
@@ -139,6 +167,17 @@ export function AiEntryChat() {
     const target = messages.find((msg) => msg.id === id)
     if (!target || target.role !== 'ai' || target.status !== 'parsed' || target.state !== 'pending') return
     if (action === 'saved') {
+      const categoriaId = target.entry.categoriaId
+      if (typeof categoriaId !== 'number' || !Number.isSafeInteger(categoriaId)) {
+        setMessages((current) =>
+          current.map((msg) =>
+            msg.id === id && msg.role === 'ai' && msg.status === 'parsed'
+              ? { ...msg, saveError: 'A resposta da IA não incluiu uma categoria válida. Reprocesse a movimentação.' }
+              : msg,
+          ),
+        )
+        return
+      }
       const { confidence: _confidence, ...data } = target.entry
       setMessages((current) =>
         current.map((msg) =>
@@ -148,7 +187,7 @@ export function AiEntryChat() {
         ),
       )
       try {
-        await addTransaction({ ...data, source: 'ia' })
+        await addTransaction({ ...data, categoriaId, source: 'ia' })
       } catch (saveError) {
         setMessages((current) =>
           current.map((msg) =>

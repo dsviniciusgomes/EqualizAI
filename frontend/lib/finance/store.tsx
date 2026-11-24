@@ -5,7 +5,7 @@ import type { Session } from '@supabase/supabase-js'
 import { getSupabaseClient } from '@/lib/supabase'
 import { buildSeed } from './seed'
 import { createLancamento, mapLancamento } from './api'
-import type { CreditCard, FutureEntry, InstallmentPurchase, Transaction, UserProfile } from './types'
+import type { CreditCard, FutureEntry, InstallmentPurchase, NewTransaction, Transaction, UserProfile } from './types'
 
 export type ViewId = 'dashboard' | 'lancamentos' | 'perfil'
 
@@ -24,7 +24,7 @@ interface FinanceState {
   setView: (view: ViewId) => void
   signOut: () => Promise<void>
   updateUser: (data: Partial<UserProfile>) => void
-  addTransaction: (tx: Omit<Transaction, 'id'>) => Promise<Transaction>
+  addTransaction: (tx: NewTransaction) => Promise<Transaction>
   removeTransaction: (id: string) => Promise<void>
 }
 
@@ -173,7 +173,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     [],
   )
 
-  const addTransaction = useCallback(async (tx: Omit<Transaction, 'id'>) => {
+  const addTransaction = useCallback(async (tx: NewTransaction) => {
     const id = await createLancamento(tx)
     const created = { ...tx, id }
     setTransactions((prev) => [created, ...prev])

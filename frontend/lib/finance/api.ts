@@ -25,13 +25,17 @@ export function mapLancamento(row: Record<string, unknown>): Transaction {
     amount: Math.abs(amount),
     date: row.date,
     category: typeof category === 'string' ? category : 'Outros',
+    categoriaId:
+      typeof row.categoria_id === 'number' && Number.isSafeInteger(row.categoria_id)
+        ? row.categoria_id
+        : undefined,
     type,
     payment: paymentMethod,
     source: row.source === 'ia' ? 'ia' : 'manual',
   }
 }
 
-export async function createLancamento(transaction: Omit<Transaction, 'id'>) {
+export async function createLancamento(transaction: Omit<Transaction, 'id'> & { categoriaId: number }) {
   const { data, error } = await getSupabaseClient().auth.getSession()
   if (error) throw new Error(`Não foi possível recuperar a sessão do Supabase: ${error.message}`)
   if (!data.session?.access_token) {
@@ -49,6 +53,7 @@ export async function createLancamento(transaction: Omit<Transaction, 'id'>) {
       amount: transaction.amount,
       date: transaction.date,
       tipo: transaction.type,
+      categoria_id: transaction.categoriaId,
     }),
   })
 
